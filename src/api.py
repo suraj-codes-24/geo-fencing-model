@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime
 from predict import predict_risk, GeofenceHysteresisManager
@@ -8,6 +9,15 @@ app = FastAPI(
     title="CodeRed Geofencing API",
     description="Python ML Microservice for predicting live spatial risk.",
     version="1.0.0"
+)
+
+# Enable CORS for the frontend tester
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # In production, replace with the React app's domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Initialize the global Hysteresis Manager (5 min cooldown)

@@ -78,8 +78,14 @@ The CodeRed Node.js backend should query this Python Microservice whenever a tou
 
 *Note: You only need to send an SOS/Notification to the user if `"dispatch_alert": true`. The Python AI automatically handles the 5-minute cooldown logic for you.*
 
-### 🗺️ Live Map Prototype
-To see the Geofences rendered visually, run:
+### 🗺️ Web Frontend Dashboard (Interactive)
+We have included a lightweight HTML/JS frontend to let you visually test the API without writing any code.
+1. Make sure the FastAPI server is running (either via Docker or `uvicorn`).
+2. Double click the `frontend/index.html` file to open it in your browser.
+3. Click anywhere on the map of Kanpur to simulate a GPS ping and watch the AI calculate live risk!
+
+### 🗺️ Static City-Wide Scan (Standalone)
+To see a static snapshot of the entire city with generated Geofences, run:
 ```bash
 python src/predict.py
 ```
