@@ -1,0 +1,17 @@
+# Virtual Environments
+venv/
+env/
+.env
+
+# Python Caches
+__pycache__/
+*.pyc
+
+# Massive Data Files
+*.csv
+kanpur_synthetic_dataset.csv
+
+# Temporary Outputs
+*.html
+live_geofence_map.html
+kanpur_grid_map.html

@@ -1,0 +1,12 @@
+pandas
+numpy
+xgboost
+scikit-learn
+joblib
+h3
+folium
+shapely
+fastapi
+uvicorn
+pydantic
+requests

@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  geofencing-ai:
+    build: .
+    container_name: codered_geofencing_ai
+    ports:
+      - "8000:8000"
+    restart: always
+    environment:
+      - PYTHONUNBUFFERED=1
