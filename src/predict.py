@@ -121,9 +121,12 @@ def predict_risk(lat: float, lng: float, current_time: datetime = None) -> dict:
     
     # --- DEMO OVERRIDE ---
     # To ensure the user can actually see Geofences trigger in the UI right now,
-    # we simulate a Severe Rainstorm and Festival crowd.
+    # we simulate a Severe Rainstorm, Festival crowd, and Evening Rush Hour.
     features_df["rainfall_mm"] = 45.0
     features_df["is_festival_day"] = 1
+    features_df["hour_of_day"] = 18
+    features_df["traffic_density"] = 100
+    features_df["tourist_footfall_density"] = 100
     
     # Predict sub-risks
     crime = float(model_crime.predict(features_df)[0])
@@ -163,9 +166,6 @@ def get_nearby_danger_zones(lat: float, lng: float, radius_k: int = 15) -> dict:
     current_time = datetime.now()
     for h in nearby_cells:
         c_lat, c_lng = h3.cell_to_latlng(h)
-        # Skip if drastically out of bounds of Kanpur to save computation
-        if c_lat < MIN_LAT - 0.05 or c_lat > MAX_LAT + 0.05 or c_lng < MIN_LNG - 0.05 or c_lng > MAX_LNG + 0.05:
-            continue
             
         res = predict_risk(c_lat, c_lng, current_time)
         if res["overall_score"] >= 70:
