@@ -321,13 +321,28 @@
                 
                 // Draw 3km Nearby Radar Polygons (Layer 2)
                 if (data.nearby_danger_zones) {
-                    // GeoJSON coordinates are [lng, lat], Leaflet handles this internally for L.geoJSON
                     nearbyRadarLayer = L.geoJSON(data.nearby_danger_zones, {
-                        style: {
-                            color: "yellow",
-                            weight: 2,
-                            fillColor: "red",
-                            fillOpacity: 0.3
+                        style: function(feature) {
+                            let color = feature.properties.color === 'red' ? '#ff0000' : '#ffcc00';
+                            return {
+                                color: color,
+                                weight: 2,
+                                fillColor: color,
+                                fillOpacity: 0.35
+                            };
+                        },
+                        onEachFeature: function (feature, layer) {
+                            let p = feature.properties;
+                            let popupContent = `
+                                <div style="font-family: Arial, sans-serif;">
+                                    <h3 style="margin-top: 0; color: ${p.color};">${p.level} ZONE</h3>
+                                    <b>Crime Risk:</b> ${p.Crime_Risk}<br>
+                                    <b>Accident Risk:</b> ${p.Accident_Risk}<br>
+                                    <b>Environment Risk:</b> ${p.Environment_Risk}<br>
+                                    <b>Isolation Risk:</b> ${p.Isolation_Risk}
+                                </div>
+                            `;
+                            layer.bindPopup(popupContent);
                         }
                     }).addTo(map);
                 }

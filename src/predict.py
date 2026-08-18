@@ -156,32 +156,88 @@ def predict_risk(lat: float, lng: float, current_time: datetime = None) -> dict:
 def get_nearby_danger_zones(lat: float, lng: float, radius_k: int = 15) -> dict:
     """
     Scans an approx 3km radius (k=15 at resolution 9) around the given point.
-    Returns a GeoJSON dict of merged critical polygons.
+    Returns a GeoJSON FeatureCollection of merged critical and caution polygons.
     """
     center_cell = h3.latlng_to_cell(lat, lng, RESOLUTION)
     nearby_cells = h3.grid_disk(center_cell, radius_k)
     
     critical_polygons = []
+    caution_polygons = []
+    
+    crit_risks = {"Crime": 0, "Accident": 0, "Environment": 0, "Isolation": 0}
+    caut_risks = {"Crime": 0, "Accident": 0, "Environment": 0, "Isolation": 0}
     
     current_time = datetime.now()
     for h in nearby_cells:
         c_lat, c_lng = h3.cell_to_latlng(h)
             
         res = predict_risk(c_lat, c_lng, current_time)
-        if res["overall_score"] >= 70:
+        score = res["overall_score"]
+        
+        if score >= 70:
             boundary = h3.cell_to_boundary(h)
             shapely_coords = [(blng, blat) for blat, blng in boundary]
             critical_polygons.append(Polygon(shapely_coords))
+            crit_risks["Crime"] += res["details"]["Crime_Risk"]
+            crit_risks["Accident"] += res["details"]["Accident_Risk"]
+            crit_risks["Environment"] += res["details"]["Environment_Risk"]
+            crit_risks["Isolation"] += res["details"]["Isolation_Risk"]
+        elif score >= 40:
+            boundary = h3.cell_to_boundary(h)
+            shapely_coords = [(blng, blat) for blat, blng in boundary]
+            caution_polygons.append(Polygon(shapely_coords))
+            caut_risks["Crime"] += res["details"]["Crime_Risk"]
+            caut_risks["Accident"] += res["details"]["Accident_Risk"]
+            caut_risks["Environment"] += res["details"]["Environment_Risk"]
+            caut_risks["Isolation"] += res["details"]["Isolation_Risk"]
             
-    if not critical_polygons:
+    features = []
+    WARNING_BUFFER_DEGREES = 0.0018 # ~200m
+    
+    if critical_polygons:
+        merged_crit = unary_union(critical_polygons).buffer(WARNING_BUFFER_DEGREES, join_style=2)
+        n = len(critical_polygons)
+        features.append({
+            "type": "Feature",
+            "geometry": mapping(merged_crit),
+            "properties": {
+                "level": "CRITICAL",
+                "color": "red",
+                "Crime_Risk": round(crit_risks["Crime"]/n, 2),
+                "Accident_Risk": round(crit_risks["Accident"]/n, 2),
+                "Environment_Risk": round(crit_risks["Environment"]/n, 2),
+                "Isolation_Risk": round(crit_risks["Isolation"]/n, 2)
+            }
+        })
+        
+    if caution_polygons:
+        merged_caut = unary_union(caution_polygons).buffer(WARNING_BUFFER_DEGREES, join_style=2)
+        # Subtract critical polygons from caution polygons so yellow doesn't draw inside red
+        if critical_polygons:
+            merged_crit_unbuffered = unary_union(critical_polygons)
+            merged_caut = merged_caut.difference(merged_crit_unbuffered)
+            
+        n = len(caution_polygons)
+        features.append({
+            "type": "Feature",
+            "geometry": mapping(merged_caut),
+            "properties": {
+                "level": "CAUTION",
+                "color": "yellow",
+                "Crime_Risk": round(caut_risks["Crime"]/n, 2),
+                "Accident_Risk": round(caut_risks["Accident"]/n, 2),
+                "Environment_Risk": round(caut_risks["Environment"]/n, 2),
+                "Isolation_Risk": round(caut_risks["Isolation"]/n, 2)
+            }
+        })
+        
+    if not features:
         return None
         
-    merged_danger_zones = unary_union(critical_polygons)
-    WARNING_BUFFER_DEGREES = 0.0018 # ~200m
-    warning_zones = merged_danger_zones.buffer(WARNING_BUFFER_DEGREES, join_style=2)
-    
-    # Convert Shapely MultiPolygon/Polygon to GeoJSON
-    return mapping(warning_zones)
+    return {
+        "type": "FeatureCollection",
+        "features": features
+    }
 
 # ==========================================
 # 4. HYSTERESIS MANAGER (LAYER 3)
