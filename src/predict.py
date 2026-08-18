@@ -175,27 +175,23 @@ def get_nearby_danger_zones(lat: float, lng: float, radius_k: int = 15) -> dict:
         score = res["overall_score"]
         
         if score >= 70:
-            boundary = h3.cell_to_boundary(h)
-            shapely_coords = [(blng, blat) for blat, blng in boundary]
-            critical_polygons.append(Polygon(shapely_coords))
+            critical_polygons.append(Point(c_lng, c_lat).buffer(0.0015)) # 150m circle
             crit_risks["Crime"] += res["details"]["Crime_Risk"]
             crit_risks["Accident"] += res["details"]["Accident_Risk"]
             crit_risks["Environment"] += res["details"]["Environment_Risk"]
             crit_risks["Isolation"] += res["details"]["Isolation_Risk"]
         elif score >= 40:
-            boundary = h3.cell_to_boundary(h)
-            shapely_coords = [(blng, blat) for blat, blng in boundary]
-            caution_polygons.append(Polygon(shapely_coords))
+            caution_polygons.append(Point(c_lng, c_lat).buffer(0.0015)) # 150m circle
             caut_risks["Crime"] += res["details"]["Crime_Risk"]
             caut_risks["Accident"] += res["details"]["Accident_Risk"]
             caut_risks["Environment"] += res["details"]["Environment_Risk"]
             caut_risks["Isolation"] += res["details"]["Isolation_Risk"]
             
     features = []
-    WARNING_BUFFER_DEGREES = 0.0018 # ~200m
+    WARNING_BUFFER_DEGREES = 0.0005 # Minor buffer since circles are already smooth
     
     if critical_polygons:
-        merged_crit = unary_union(critical_polygons).buffer(WARNING_BUFFER_DEGREES, join_style=2)
+        merged_crit = unary_union(critical_polygons).buffer(WARNING_BUFFER_DEGREES, join_style=1) # join_style=1 is ROUND
         n = len(critical_polygons)
         features.append({
             "type": "Feature",
@@ -211,7 +207,7 @@ def get_nearby_danger_zones(lat: float, lng: float, radius_k: int = 15) -> dict:
         })
         
     if caution_polygons:
-        merged_caut = unary_union(caution_polygons).buffer(WARNING_BUFFER_DEGREES, join_style=2)
+        merged_caut = unary_union(caution_polygons).buffer(WARNING_BUFFER_DEGREES, join_style=1)
         # Subtract critical polygons from caution polygons so yellow doesn't draw inside red
         if critical_polygons:
             merged_crit_unbuffered = unary_union(critical_polygons)
