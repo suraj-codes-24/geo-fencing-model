@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeRed - ML Geofencing Tester</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #121212;
+            color: white;
+        }
+        
+        #map {
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+        
+        #dashboard {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 350px;
+            background: rgba(25, 25, 25, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 20px;
+            z-index: 1000;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            transition: all 0.3s ease;
+        }
+        
+        .header {
+            border-bottom: 1px solid #444;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        
+        h2 { margin: 0 0 5px 0; font-size: 20px; }
+        p.subtitle { margin: 0; font-size: 13px; color: #aaa; }
+        
+        .status-box {
+            text-align: center;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 22px;
+            margin-bottom: 20px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            letter-spacing: 1px;
+        }
+        
+        .status-CRITICAL { background: rgba(220, 53, 69, 0.2); border-color: #dc3545; color: #ff4d4d; animation: pulse 1.5s infinite; }
+        .status-CAUTION { background: rgba(255, 193, 7, 0.2); border-color: #ffc107; color: #ffcd39; }
+        .status-SAFE { background: rgba(25, 135, 84, 0.2); border-color: #198754; color: #75b798; }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(220, 53, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+        }
+        
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 14px;
+            align-items: center;
+        }
+        
+        .bar-container {
+            width: 50%;
+            height: 8px;
+            background: #333;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-left: 10px;
+        }
+        
+        .bar {
+            height: 100%;
+            background: #0d6efd;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        
+        .bar.red { background: #dc3545; }
+        .bar.yellow { background: #ffc107; }
+        .bar.green { background: #198754; }
+        
+        .hysteresis-alert {
+            display: none;
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 6px;
+            background: rgba(13, 110, 253, 0.2);
+            border: 1px solid #0d6efd;
+            color: #8bb9fe;
+            font-size: 12px;
+            text-align: center;
+        }
+        
+        .coordinates {
+            font-family: monospace;
+            color: #888;
+            font-size: 12px;
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        #loading {
+            display: none;
+            text-align: center;
+            color: #aaa;
+            font-size: 14px;
+            font-style: italic;
+        }
+        
+        .live-btn {
+            margin-top: 10px;
+            width: 100%;
+            background-color: #0d6efd;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .live-btn:hover {
+            background-color: #0b5ed7;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+    
+    <div id="dashboard">
+        <div class="header">
+            <h2>Live Risk Engine</h2>
+            <p class="subtitle">Click map or use live GPS</p>
+            <button id="btnLiveLocation" class="live-btn">📍 Track My Live Location</button>
+        </div>
+        
+        <div id="loading">Querying AI...</div>
+        
+        <div id="results" style="display: none;">
+            <div id="statusBox" class="status-box">AWAITING PING</div>
+            
+            <div class="metric">
+                <span>Composite Score</span>
+                <div class="bar-container"><div id="barOverall" class="bar"></div></div>
+                <span id="valOverall" style="width: 40px; text-align: right;">0</span>
+            </div>
+            
+            <hr style="border: 0; border-top: 1px solid #333; margin: 15px 0;">
+            
+            <div class="metric">
+                <span>Crime Risk</span>
+                <div class="bar-container"><div id="barCrime" class="bar"></div></div>
+                <span id="valCrime" style="width: 40px; text-align: right;">0</span>
+            </div>
+            
+            <div class="metric">
+                <span>Accident Risk</span>
+                <div class="bar-container"><div id="barAccident" class="bar"></div></div>
+                <span id="valAccident" style="width: 40px; text-align: right;">0</span>
+            </div>
+            
+            <div class="metric">
+                <span>Environment Risk</span>
+                <div class="bar-container"><div id="barEnv" class="bar"></div></div>
+                <span id="valEnv" style="width: 40px; text-align: right;">0</span>
+            </div>
+            
+            <div class="metric">
+                <span>Isolation Risk</span>
+                <div class="bar-container"><div id="barIso" class="bar"></div></div>
+                <span id="valIso" style="width: 40px; text-align: right;">0</span>
+            </div>
+            
+            <div id="hysteresisMsg" class="hysteresis-alert">
+                Alert Suppressed: 5-Min Cooldown Active
+            </div>
+            
+            <div class="coordinates" id="coordsDisplay">
+                Lat: -- | Lng: --
+            </div>
+        </div>
+        
+        <div id="welcomeMsg" style="text-align: center; color: #888; font-size: 14px; padding: 20px 0;">
+            Connects directly to your local FastAPI Microservice on port 8000.
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        // Initialize Map centered on Kanpur
+        const map = L.map('map').setView([26.4499, 80.3319], 12);
+        
+        // Use a beautiful dark mode tile layer (CartoDB Dark Matter)
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(map);
+
+        let currentMarker = null;
+        let activeGeofenceLayer = null;
+        
+        function getBarClass(val) {
+            if (val >= 70) return 'bar red';
+            if (val >= 40) return 'bar yellow';
+            return 'bar green';
+        }
+        
+        function updateMetricUI(idPrefix, value) {
+            const bar = document.getElementById(`bar${idPrefix}`);
+            const text = document.getElementById(`val${idPrefix}`);
+            bar.style.width = `${value}%`;
+            bar.className = getBarClass(value);
+            text.innerText = value.toFixed(1);
+        }
+
+        async function checkGeofence(lat, lng) {
+            // Drop a temporary marker
+            if (currentMarker) map.removeLayer(currentMarker);
+            if (activeGeofenceLayer) map.removeLayer(activeGeofenceLayer);
+            
+            currentMarker = L.circleMarker([lat, lng], {
+                radius: 8,
+                fillColor: "#fff",
+                color: "#fff",
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 0.8
+            }).addTo(map);
+            
+            // Fly map to location
+            map.flyTo([lat, lng], 15, { animate: true, duration: 1 });
+            
+            // UI Updates
+            document.getElementById('welcomeMsg').style.display = 'none';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('loading').style.display = 'block';
+            
+            try {
+                // Send live request to Python API
+                const response = await fetch('http://127.0.0.1:8000/api/v1/geofence/check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: "demo_tourist_1",
+                        lat: lat,
+                        lng: lng
+                    })
+                });
+                
+                const data = await response.json();
+                
+                // --- UPDATE DASHBOARD UI ---
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('results').style.display = 'block';
+                
+                // Status Box
+                const statusBox = document.getElementById('statusBox');
+                statusBox.innerText = data.status;
+                statusBox.className = `status-box status-${data.status}`;
+                
+                // Metrics
+                updateMetricUI('Overall', data.overall_score);
+                updateMetricUI('Crime', data.details.Crime_Risk);
+                updateMetricUI('Accident', data.details.Accident_Risk);
+                updateMetricUI('Env', data.details.Environment_Risk);
+                updateMetricUI('Iso', data.details.Isolation_Risk);
+                
+                // Coordinates
+                document.getElementById('coordsDisplay').innerText = `Lat: ${lat.toFixed(4)} | Lng: ${lng.toFixed(4)}`;
+                
+                // Hysteresis Alert logic
+                const hysMsg = document.getElementById('hysteresisMsg');
+                if (data.status === "CRITICAL" && data.dispatch_alert === false) {
+                    hysMsg.style.display = 'block';
+                    hysMsg.innerText = "Alert Suppressed: 5-Min Cooldown Active";
+                } else if (data.dispatch_alert === true) {
+                    hysMsg.style.display = 'block';
+                    hysMsg.style.background = 'rgba(220, 53, 69, 0.2)';
+                    hysMsg.style.borderColor = '#dc3545';
+                    hysMsg.style.color = '#ff4d4d';
+                    hysMsg.innerText = "⚠️ SOS ALERT DISPATCHED ⚠️";
+                } else {
+                    hysMsg.style.display = 'none';
+                }
+                
+                // Update Marker Color based on Status
+                let markerColor = "#198754"; // SAFE green
+                if (data.status === "CAUTION") markerColor = "#ffc107"; // yellow
+                if (data.status === "CRITICAL") markerColor = "#dc3545"; // red
+                
+                currentMarker.setStyle({
+                    fillColor: markerColor,
+                    color: markerColor,
+                    radius: data.status === "CRITICAL" ? 15 : 8
+                });
+                
+                // If it's a critical dispatch, draw a temporary 200m warning circle
+                if (data.dispatch_alert === true) {
+                    activeGeofenceLayer = L.circle([lat, lng], {
+                        color: 'yellow',
+                        fillColor: 'red',
+                        fillOpacity: 0.2,
+                        radius: 200 // meters
+                    }).addTo(map);
+                }
+
+            } catch (err) {
+                document.getElementById('loading').innerText = "Error: Make sure the Python API is running on port 8000.";
+                console.error(err);
+            }
+        }
+
+        // 1. Map Click Event Listener
+        map.on('click', function(e) {
+            checkGeofence(e.latlng.lat, e.latlng.lng);
+        });
+        
+        // 2. Live Location Button Listener
+        document.getElementById('btnLiveLocation').addEventListener('click', function() {
+            if ("geolocation" in navigator) {
+                document.getElementById('welcomeMsg').style.display = 'none';
+                document.getElementById('results').style.display = 'none';
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('loading').innerText = "Getting GPS Signal...";
+                
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        checkGeofence(position.coords.latitude, position.coords.longitude);
+                    },
+                    function(error) {
+                        document.getElementById('loading').innerText = "Location Error: " + error.message;
+                    },
+                    { enableHighAccuracy: true }
+                );
+            } else {
+                alert("Geolocation is not supported by your browser");
+            }
+        });
+    </script>
+</body>
+</html>

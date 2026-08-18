@@ -37,12 +37,13 @@ def haversine(lat1, lon1, lat2, lon2):
 # 2. LOAD MODELS
 # ==========================================
 print("Loading ML Models and Feature Schema...")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 try:
-    model_crime = joblib.load("models/xgb_crime.pkl")
-    model_accident = joblib.load("models/xgb_accident.pkl")
-    model_env = joblib.load("models/xgb_environment.pkl")
-    model_iso = joblib.load("models/xgb_isolation.pkl")
-    feature_cols = joblib.load("models/feature_columns.pkl")
+    model_crime = joblib.load(os.path.join(BASE_DIR, "models", "xgb_crime.pkl"))
+    model_accident = joblib.load(os.path.join(BASE_DIR, "models", "xgb_accident.pkl"))
+    model_env = joblib.load(os.path.join(BASE_DIR, "models", "xgb_environment.pkl"))
+    model_iso = joblib.load(os.path.join(BASE_DIR, "models", "xgb_isolation.pkl"))
+    feature_cols = joblib.load(os.path.join(BASE_DIR, "models", "feature_columns.pkl"))
 except Exception as e:
     print(f"Error loading models: {e}. Please ensure 'train_models.py' ran successfully.")
     exit(1)

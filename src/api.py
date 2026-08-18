@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime
-from predict import predict_risk, GeofenceHysteresisManager
+from src.predict import predict_risk, GeofenceHysteresisManager
 
 # Initialize the FastAPI app
 app = FastAPI(
