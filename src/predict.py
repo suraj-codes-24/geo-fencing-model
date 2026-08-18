@@ -153,13 +153,30 @@ def predict_risk(lat: float, lng: float, current_time: datetime = None) -> dict:
         }
     }
 
-def get_nearby_danger_zones(lat: float, lng: float, radius_k: int = 15) -> dict:
+def get_nearby_danger_zones(lat: float, lng: float) -> tuple:
     """
-    Scans an approx 3km radius (k=15 at resolution 9) around the given point.
-    Returns a GeoJSON FeatureCollection of merged critical and caution polygons.
+    Scans a dynamic radius around the given point based on isolation.
+    Returns (GeoJSON_dict, radar_radius_km).
     """
     center_cell = h3.latlng_to_cell(lat, lng, RESOLUTION)
-    nearby_cells = h3.grid_disk(center_cell, radius_k)
+    current_time = datetime.now()
+    
+    # SMART LOGIC 1: Dynamic Radar Scaling
+    # If the user is isolated, they need a wider radar to find distant safe/danger zones.
+    center_res = predict_risk(lat, lng, current_time)
+    iso_risk = center_res["details"]["Isolation_Risk"]
+    
+    if iso_risk >= 70:
+        actual_radius_k = 25  # ~5km
+        radar_km = 5
+    elif iso_risk <= 40:
+        actual_radius_k = 10  # ~2km
+        radar_km = 2
+    else:
+        actual_radius_k = 15  # ~3km
+        radar_km = 3
+        
+    nearby_cells = h3.grid_disk(center_cell, actual_radius_k)
     
     critical_polygons = []
     caution_polygons = []
@@ -167,28 +184,30 @@ def get_nearby_danger_zones(lat: float, lng: float, radius_k: int = 15) -> dict:
     crit_risks = {"Crime": 0, "Accident": 0, "Environment": 0, "Isolation": 0}
     caut_risks = {"Crime": 0, "Accident": 0, "Environment": 0, "Isolation": 0}
     
-    current_time = datetime.now()
     for h in nearby_cells:
         c_lat, c_lng = h3.cell_to_latlng(h)
-            
         res = predict_risk(c_lat, c_lng, current_time)
         score = res["overall_score"]
         
+        # SMART LOGIC 2: Dynamic Hotspot Blobs
+        # Severe hotspots physically expand their danger perimeter, while mild cautions stay tight.
+        dynamic_buffer = 0.0008 + (score / 100.0) * 0.0015
+        
         if score >= 70:
-            critical_polygons.append(Point(c_lng, c_lat).buffer(0.0015)) # 150m circle
+            critical_polygons.append(Point(c_lng, c_lat).buffer(dynamic_buffer))
             crit_risks["Crime"] += res["details"]["Crime_Risk"]
             crit_risks["Accident"] += res["details"]["Accident_Risk"]
             crit_risks["Environment"] += res["details"]["Environment_Risk"]
             crit_risks["Isolation"] += res["details"]["Isolation_Risk"]
         elif score >= 40:
-            caution_polygons.append(Point(c_lng, c_lat).buffer(0.0015)) # 150m circle
+            caution_polygons.append(Point(c_lng, c_lat).buffer(dynamic_buffer))
             caut_risks["Crime"] += res["details"]["Crime_Risk"]
             caut_risks["Accident"] += res["details"]["Accident_Risk"]
             caut_risks["Environment"] += res["details"]["Environment_Risk"]
             caut_risks["Isolation"] += res["details"]["Isolation_Risk"]
             
     features = []
-    WARNING_BUFFER_DEGREES = 0.0005 # Minor buffer since circles are already smooth
+    WARNING_BUFFER_DEGREES = 0.0005 # Minor union buffer
     
     if critical_polygons:
         merged_crit = unary_union(critical_polygons).buffer(WARNING_BUFFER_DEGREES, join_style=1) # join_style=1 is ROUND
@@ -228,12 +247,12 @@ def get_nearby_danger_zones(lat: float, lng: float, radius_k: int = 15) -> dict:
         })
         
     if not features:
-        return None
+        return None, radar_km
         
     return {
         "type": "FeatureCollection",
         "features": features
-    }
+    }, radar_km
 
 # ==========================================
 # 4. HYSTERESIS MANAGER (LAYER 3)

@@ -39,6 +39,7 @@ class RiskResponse(BaseModel):
     details: dict
     dispatch_alert: bool
     nearby_danger_zones: Optional[Any] = None
+    radar_radius_km: Optional[int] = None
 
 @app.get("/health")
 def health_check():
@@ -60,8 +61,8 @@ def check_geofence(req: LocationRequest):
             current_time=now
         )
         
-        # 3. Radar: Get nearby danger zones (3km radius)
-        nearby_geojson = get_nearby_danger_zones(req.lat, req.lng, radius_k=15)
+        # 3. Radar: Get nearby danger zones
+        nearby_geojson, radius = get_nearby_danger_zones(req.lat, req.lng)
         
         return RiskResponse(
             user_id=req.user_id,
@@ -72,7 +73,8 @@ def check_geofence(req: LocationRequest):
             status=risk_result["status"],
             details=risk_result["details"],
             dispatch_alert=dispatch,
-            nearby_danger_zones=nearby_geojson
+            nearby_danger_zones=nearby_geojson,
+            radar_radius_km=radius
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction Error: {str(e)}")

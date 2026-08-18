@@ -245,16 +245,6 @@
             if (nearbyRadarLayer) map.removeLayer(nearbyRadarLayer);
             if (radarCircle) map.removeLayer(radarCircle);
             
-            // Draw the 3km Radar Scan Boundary (Dashed Circle)
-            radarCircle = L.circle([lat, lng], {
-                radius: 3000, // 3km
-                color: '#ff4d4d',
-                weight: 2,
-                dashArray: '10, 15',
-                fillOpacity: 0.05,
-                fillColor: '#ff4d4d'
-            }).addTo(map);
-            
             currentMarker = L.circleMarker([lat, lng], {
                 radius: 8,
                 fillColor: "#fff",
