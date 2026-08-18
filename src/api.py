@@ -1,41 +1,44 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional, Any
 from datetime import datetime
-from src.predict import predict_risk, GeofenceHysteresisManager
+from src.predict import predict_risk, GeofenceHysteresisManager, get_nearby_danger_zones
 
 # Initialize the FastAPI app
 app = FastAPI(
     title="CodeRed Geofencing API",
-    description="Python ML Microservice for predicting live spatial risk.",
+    description="Real-time ML risk assessment and geofence triggering for tourist safety.",
     version="1.0.0"
 )
 
-# Enable CORS for the frontend tester
+# Enable CORS for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, replace with the React app's domain
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Initialize the global Hysteresis Manager (5 min cooldown)
+# Initialize the Hysteresis Manager
 hysteresis_manager = GeofenceHysteresisManager(cooldown_minutes=5)
 
-# Define the expected JSON input schema
-class LocationPing(BaseModel):
+class LocationRequest(BaseModel):
     user_id: str
     lat: float
     lng: float
 
-# Define the JSON response schema (optional but good for documentation)
 class RiskResponse(BaseModel):
     user_id: str
+    lat: float
+    lng: float
+    timestamp: str
     overall_score: float
     status: str
-    dispatch_alert: bool
     details: dict
+    dispatch_alert: bool
+    nearby_danger_zones: Optional[Any] = None
 
 @app.get("/health")
 def health_check():
@@ -43,33 +46,34 @@ def health_check():
     return {"status": "online", "message": "CodeRed ML Engine is running."}
 
 @app.post("/api/v1/geofence/check", response_model=RiskResponse)
-def check_geofence(ping: LocationPing):
-    """
-    Takes a GPS ping, runs the 4 XGBoost models, checks hysteresis,
-    and returns whether an emergency alert should be dispatched.
-    """
+def check_geofence(req: LocationRequest):
     try:
-        # 1. Run the ML Prediction (Layer 1 & 2)
-        current_time = datetime.now()
-        risk_result = predict_risk(ping.lat, ping.lng, current_time)
+        now = datetime.now()
         
-        # 2. Run the Hysteresis Check (Layer 3)
-        # Only dispatch if it's CRITICAL and the user isn't in a cooldown period
+        # 1. Predict exact point risk
+        risk_result = predict_risk(req.lat, req.lng, current_time=now)
+        
+        # 2. Check if we need to dispatch an SOS (Hysteresis Check)
         dispatch = hysteresis_manager.should_trigger_alert(
-            user_id=ping.user_id,
+            user_id=req.user_id,
             status=risk_result["status"],
-            current_time=current_time
+            current_time=now
         )
         
-        # 3. Format and return response
-        return {
-            "user_id": ping.user_id,
-            "overall_score": risk_result["overall_score"],
-            "status": risk_result["status"],
-            "dispatch_alert": dispatch,
-            "details": risk_result["details"]
-        }
+        # 3. Radar: Get nearby danger zones (3km radius)
+        nearby_geojson = get_nearby_danger_zones(req.lat, req.lng, radius_k=15)
         
+        return RiskResponse(
+            user_id=req.user_id,
+            lat=req.lat,
+            lng=req.lng,
+            timestamp=now.isoformat(),
+            overall_score=risk_result["overall_score"],
+            status=risk_result["status"],
+            details=risk_result["details"],
+            dispatch_alert=dispatch,
+            nearby_danger_zones=nearby_geojson
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction Error: {str(e)}")
 

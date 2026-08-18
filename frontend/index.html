@@ -221,6 +221,7 @@
 
         let currentMarker = null;
         let activeGeofenceLayer = null;
+        let nearbyRadarLayer = null; // New layer for the 3km radar
         
         function getBarClass(val) {
             if (val >= 70) return 'bar red';
@@ -237,9 +238,10 @@
         }
 
         async function checkGeofence(lat, lng) {
-            // Drop a temporary marker
+            // Clear previous map layers
             if (currentMarker) map.removeLayer(currentMarker);
             if (activeGeofenceLayer) map.removeLayer(activeGeofenceLayer);
+            if (nearbyRadarLayer) map.removeLayer(nearbyRadarLayer);
             
             currentMarker = L.circleMarker([lat, lng], {
                 radius: 8,
@@ -251,7 +253,7 @@
             }).addTo(map);
             
             // Fly map to location
-            map.flyTo([lat, lng], 15, { animate: true, duration: 1 });
+            map.flyTo([lat, lng], 14, { animate: true, duration: 1 });
             
             // UI Updates
             document.getElementById('welcomeMsg').style.display = 'none';
@@ -317,13 +319,16 @@
                     radius: data.status === "CRITICAL" ? 15 : 8
                 });
                 
-                // If it's a critical dispatch, draw a temporary 200m warning circle
-                if (data.dispatch_alert === true) {
-                    activeGeofenceLayer = L.circle([lat, lng], {
-                        color: 'yellow',
-                        fillColor: 'red',
-                        fillOpacity: 0.2,
-                        radius: 200 // meters
+                // Draw 3km Nearby Radar Polygons (Layer 2)
+                if (data.nearby_danger_zones) {
+                    // GeoJSON coordinates are [lng, lat], Leaflet handles this internally for L.geoJSON
+                    nearbyRadarLayer = L.geoJSON(data.nearby_danger_zones, {
+                        style: {
+                            color: "yellow",
+                            weight: 2,
+                            fillColor: "red",
+                            fillOpacity: 0.3
+                        }
                     }).addTo(map);
                 }
 

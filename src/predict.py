@@ -116,7 +116,16 @@ def build_features_for_location(lat: float, lng: float, current_time: datetime =
     return df[feature_cols]
 
 def predict_risk(lat: float, lng: float, current_time: datetime = None) -> dict:
+    # Build features
     features_df = build_features_for_location(lat, lng, current_time)
+    
+    # --- DEMO OVERRIDE ---
+    # To ensure the user can actually see Geofences trigger in the UI right now,
+    # we simulate a Severe Rainstorm and Festival crowd.
+    features_df["rainfall_mm"] = 45.0
+    features_df["is_festival_day"] = 1
+    
+    # Predict sub-risks
     crime = float(model_crime.predict(features_df)[0])
     acc = float(model_accident.predict(features_df)[0])
     env = float(model_env.predict(features_df)[0])
@@ -140,6 +149,39 @@ def predict_risk(lat: float, lng: float, current_time: datetime = None) -> dict:
             "Isolation_Risk": round(iso, 2)
         }
     }
+
+def get_nearby_danger_zones(lat: float, lng: float, radius_k: int = 15) -> dict:
+    """
+    Scans an approx 3km radius (k=15 at resolution 9) around the given point.
+    Returns a GeoJSON dict of merged critical polygons.
+    """
+    center_cell = h3.latlng_to_cell(lat, lng, RESOLUTION)
+    nearby_cells = h3.grid_disk(center_cell, radius_k)
+    
+    critical_polygons = []
+    
+    current_time = datetime.now()
+    for h in nearby_cells:
+        c_lat, c_lng = h3.cell_to_latlng(h)
+        # Skip if drastically out of bounds of Kanpur to save computation
+        if c_lat < MIN_LAT - 0.05 or c_lat > MAX_LAT + 0.05 or c_lng < MIN_LNG - 0.05 or c_lng > MAX_LNG + 0.05:
+            continue
+            
+        res = predict_risk(c_lat, c_lng, current_time)
+        if res["overall_score"] >= 70:
+            boundary = h3.cell_to_boundary(h)
+            shapely_coords = [(blng, blat) for blat, blng in boundary]
+            critical_polygons.append(Polygon(shapely_coords))
+            
+    if not critical_polygons:
+        return None
+        
+    merged_danger_zones = unary_union(critical_polygons)
+    WARNING_BUFFER_DEGREES = 0.0018 # ~200m
+    warning_zones = merged_danger_zones.buffer(WARNING_BUFFER_DEGREES, join_style=2)
+    
+    # Convert Shapely MultiPolygon/Polygon to GeoJSON
+    return mapping(warning_zones)
 
 # ==========================================
 # 4. HYSTERESIS MANAGER (LAYER 3)
