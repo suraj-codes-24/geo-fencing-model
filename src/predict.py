@@ -7,7 +7,7 @@ import numpy as np
 import h3
 import folium
 from datetime import datetime, timedelta
-from shapely.geometry import Polygon, mapping
+from shapely.geometry import Polygon, Point, mapping
 from shapely.ops import unary_union
 
 # ==========================================
@@ -153,64 +153,51 @@ def predict_risk(lat: float, lng: float, current_time: datetime = None) -> dict:
         }
     }
 
+def get_center_grid(lat: float, lng: float) -> dict:
+    """Returns the GeoJSON polygon for the exact center hexagon."""
+    center_cell = h3.latlng_to_cell(lat, lng, RESOLUTION)
+    boundary = h3.cell_to_boundary(center_cell)
+    shapely_coords = [(blng, blat) for blat, blng in boundary]
+    return mapping(Polygon(shapely_coords))
+
 def get_nearby_danger_zones(lat: float, lng: float) -> tuple:
     """
-    Scans a dynamic radius around the given point based on isolation.
-    Returns (GeoJSON_dict, radar_radius_km).
+    Scans a 2km radius around the given point and returns only critical zones (>= 70).
     """
     center_cell = h3.latlng_to_cell(lat, lng, RESOLUTION)
     current_time = datetime.now()
     
-    # SMART LOGIC 1: Dynamic Radar Scaling
-    # If the user is isolated, they need a wider radar to find distant safe/danger zones.
-    center_res = predict_risk(lat, lng, current_time)
-    iso_risk = center_res["details"]["Isolation_Risk"]
-    
-    if iso_risk >= 70:
-        actual_radius_k = 25  # ~5km
-        radar_km = 5
-    elif iso_risk <= 40:
-        actual_radius_k = 10  # ~2km
-        radar_km = 2
-    else:
-        actual_radius_k = 15  # ~3km
-        radar_km = 3
+    # User requested a 2km radius (k=7)
+    actual_radius_k = 7
+    radar_km = 2.0
         
     nearby_cells = h3.grid_disk(center_cell, actual_radius_k)
     
     critical_polygons = []
-    caution_polygons = []
-    
     crit_risks = {"Crime": 0, "Accident": 0, "Environment": 0, "Isolation": 0}
-    caut_risks = {"Crime": 0, "Accident": 0, "Environment": 0, "Isolation": 0}
     
     for h in nearby_cells:
         c_lat, c_lng = h3.cell_to_latlng(h)
         res = predict_risk(c_lat, c_lng, current_time)
         score = res["overall_score"]
         
-        # SMART LOGIC 2: Dynamic Hotspot Blobs
-        # Severe hotspots physically expand their danger perimeter, while mild cautions stay tight.
-        dynamic_buffer = 0.0008 + (score / 100.0) * 0.0015
-        
+        # ONLY process if score >= 70 (Critical)
         if score >= 70:
-            critical_polygons.append(Point(c_lng, c_lat).buffer(dynamic_buffer))
+            boundary = h3.cell_to_boundary(h)
+            shapely_coords = [(blng, blat) for blat, blng in boundary]
+            poly = Polygon(shapely_coords)
+            
+            critical_polygons.append(poly)
             crit_risks["Crime"] += res["details"]["Crime_Risk"]
             crit_risks["Accident"] += res["details"]["Accident_Risk"]
             crit_risks["Environment"] += res["details"]["Environment_Risk"]
             crit_risks["Isolation"] += res["details"]["Isolation_Risk"]
-        elif score >= 40:
-            caution_polygons.append(Point(c_lng, c_lat).buffer(dynamic_buffer))
-            caut_risks["Crime"] += res["details"]["Crime_Risk"]
-            caut_risks["Accident"] += res["details"]["Accident_Risk"]
-            caut_risks["Environment"] += res["details"]["Environment_Risk"]
-            caut_risks["Isolation"] += res["details"]["Isolation_Risk"]
             
     features = []
     WARNING_BUFFER_DEGREES = 0.0005 # Minor union buffer
     
     if critical_polygons:
-        merged_crit = unary_union(critical_polygons).buffer(WARNING_BUFFER_DEGREES, join_style=1) # join_style=1 is ROUND
+        merged_crit = unary_union(critical_polygons).buffer(WARNING_BUFFER_DEGREES, join_style=1)
         n = len(critical_polygons)
         features.append({
             "type": "Feature",
@@ -222,27 +209,6 @@ def get_nearby_danger_zones(lat: float, lng: float) -> tuple:
                 "Accident_Risk": round(crit_risks["Accident"]/n, 2),
                 "Environment_Risk": round(crit_risks["Environment"]/n, 2),
                 "Isolation_Risk": round(crit_risks["Isolation"]/n, 2)
-            }
-        })
-        
-    if caution_polygons:
-        merged_caut = unary_union(caution_polygons).buffer(WARNING_BUFFER_DEGREES, join_style=1)
-        # Subtract critical polygons from caution polygons so yellow doesn't draw inside red
-        if critical_polygons:
-            merged_crit_unbuffered = unary_union(critical_polygons)
-            merged_caut = merged_caut.difference(merged_crit_unbuffered)
-            
-        n = len(caution_polygons)
-        features.append({
-            "type": "Feature",
-            "geometry": mapping(merged_caut),
-            "properties": {
-                "level": "CAUTION",
-                "color": "yellow",
-                "Crime_Risk": round(caut_risks["Crime"]/n, 2),
-                "Accident_Risk": round(caut_risks["Accident"]/n, 2),
-                "Environment_Risk": round(caut_risks["Environment"]/n, 2),
-                "Isolation_Risk": round(caut_risks["Isolation"]/n, 2)
             }
         })
         

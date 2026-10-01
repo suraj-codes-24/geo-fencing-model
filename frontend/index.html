@@ -239,12 +239,14 @@
         }
 
         async function checkGeofence(lat, lng) {
-            // Clear previous map layers
-            if (currentMarker) map.removeLayer(currentMarker);
-            if (activeGeofenceLayer) map.removeLayer(activeGeofenceLayer);
-            if (nearbyRadarLayer) map.removeLayer(nearbyRadarLayer);
-            if (radarCircle) map.removeLayer(radarCircle);
+            // We clear layers synchronously after the fetch resolves to avoid async race conditions
+            // where multiple rapid clicks orphan map layers.
             
+            // Note: currentMarker is handled synchronously before the fetch to show immediate feedback.
+            if (currentMarker) {
+                map.removeLayer(currentMarker);
+                currentMarker = null;
+            }
             currentMarker = L.circleMarker([lat, lng], {
                 radius: 8,
                 fillColor: "#fff",
@@ -254,8 +256,8 @@
                 fillOpacity: 0.8
             }).addTo(map);
             
-            // Fly map to location
-            map.flyTo([lat, lng], 14, { animate: true, duration: 1 });
+            // Fly map to location with a tighter zoom to clearly show the grid
+            map.flyTo([lat, lng], 16, { animate: true, duration: 1 });
             
             // UI Updates
             document.getElementById('welcomeMsg').style.display = 'none';
@@ -318,11 +320,37 @@
                 currentMarker.setStyle({
                     fillColor: markerColor,
                     color: markerColor,
-                    radius: data.status === "CRITICAL" ? 15 : 8
+                    radius: data.status === "CRITICAL" ? 12 : 6
                 });
                 
-                // Draw 3km Nearby Radar Polygons (Layer 2)
-                if (data.nearby_danger_zones) {
+                // Clear old async layers before assigning new ones
+                if (activeGeofenceLayer) {
+                    map.removeLayer(activeGeofenceLayer);
+                    activeGeofenceLayer = null;
+                }
+                if (nearbyRadarLayer) {
+                    map.removeLayer(nearbyRadarLayer);
+                    nearbyRadarLayer = null;
+                }
+                if (radarCircle) {
+                    map.removeLayer(radarCircle);
+                    radarCircle = null;
+                }
+                
+                // Draw Current Grid Hexagon ALWAYS
+                if (data.current_zone) {
+                    activeGeofenceLayer = L.geoJSON(data.current_zone, {
+                        style: {
+                            color: markerColor,
+                            weight: 2,
+                            fillColor: markerColor,
+                            fillOpacity: 0.4
+                        }
+                    }).addTo(map);
+                }
+                
+                // Draw 2km Nearby Radar Polygons ONLY when current status is CRITICAL
+                if (data.status === "CRITICAL" && data.nearby_danger_zones) {
                     nearbyRadarLayer = L.geoJSON(data.nearby_danger_zones, {
                         style: function(feature) {
                             let color = feature.properties.color === 'red' ? '#ff0000' : '#ffcc00';

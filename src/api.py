@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Any
 from datetime import datetime
-from src.predict import predict_risk, GeofenceHysteresisManager, get_nearby_danger_zones
+from src.predict import predict_risk, GeofenceHysteresisManager, get_nearby_danger_zones, get_center_grid
 
 # Initialize the FastAPI app
 app = FastAPI(
@@ -38,6 +38,7 @@ class RiskResponse(BaseModel):
     status: str
     details: dict
     dispatch_alert: bool
+    current_zone: Optional[Any] = None
     nearby_danger_zones: Optional[Any] = None
     radar_radius_km: Optional[int] = None
 
@@ -63,6 +64,8 @@ def check_geofence(req: LocationRequest):
         
         # 3. Radar: Get nearby danger zones
         nearby_geojson, radius = get_nearby_danger_zones(req.lat, req.lng)
+        # 4. Get Current Grid Polygon
+        current_zone_geojson = get_center_grid(req.lat, req.lng)
         
         return RiskResponse(
             user_id=req.user_id,
@@ -73,6 +76,7 @@ def check_geofence(req: LocationRequest):
             status=risk_result["status"],
             details=risk_result["details"],
             dispatch_alert=dispatch,
+            current_zone=current_zone_geojson,
             nearby_danger_zones=nearby_geojson,
             radar_radius_km=radius
         )
